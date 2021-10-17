@@ -70,7 +70,7 @@ impl Display for Error {
             Error::NotFound => write!(f, "Unable to locate config file"),
             Error::ReadingEnvHome(err) => {
                 write!(f, "Unable to read $HOME environment variable: {}", err)
-            },
+            }
             Error::Io(err) => write!(f, "Error reading config file: {}", err),
             Error::Yaml(err) => write!(f, "Config error: {}", err),
         }
@@ -152,7 +152,7 @@ fn load_from(path: &Path, cli_config: Value) -> Result<Config> {
         Err(err) => {
             error!(target: LOG_TARGET_CONFIG, "Unable to load config {:?}: {}", path, err);
             Err(err)
-        },
+        }
     }
 }
 
@@ -196,7 +196,7 @@ fn parse_config(
             } else {
                 return Err(Error::Yaml(error));
             }
-        },
+        }
     };
 
     // Merge config with imports.
@@ -211,7 +211,7 @@ fn load_imports(config: &Value, config_paths: &mut Vec<PathBuf>, recursion_limit
         Some(_) => {
             error!(target: LOG_TARGET_CONFIG, "Invalid import type: expected a sequence");
             return Value::Null;
-        },
+        }
         None => return Value::Null,
     };
 
@@ -232,7 +232,7 @@ fn load_imports(config: &Value, config_paths: &mut Vec<PathBuf>, recursion_limit
                     "Invalid import element type: expected path string"
                 );
                 continue;
-            },
+            }
         };
 
         // Resolve paths relative to user's home directory.
@@ -249,7 +249,7 @@ fn load_imports(config: &Value, config_paths: &mut Vec<PathBuf>, recursion_limit
             Ok(config) => merged = serde_utils::merge(merged, config),
             Err(err) => {
                 error!(target: LOG_TARGET_CONFIG, "Unable to import config {:?}: {}", path, err)
-            },
+            }
         }
     }
 
@@ -291,9 +291,42 @@ fn installed_config() -> Option<PathBuf> {
         })
 }
 
+/// Get the location of the first found default config file paths
+/// according to the following order:
+///
+/// 1. %XDG_CONFIG_HOME%/alacritty/alacritty.yml
+/// 2. %XDG_CONFIG_HOME%/alacritty.yml
+/// 3. %USERPROFILE%/.config/alacritty/alacritty.yml
+/// 4. %USERPROFILE%/.alacritty.yml
 #[cfg(windows)]
 fn installed_config() -> Option<PathBuf> {
-    dirs::config_dir().map(|path| path.join("alacritty\\alacritty.yml")).filter(|new| new.exists())
+    // Try using XDG location by default.
+    if let Ok(config_home) = env::var("XDG_CONFIG_HOME") {
+        let path = PathBuf::from(&config_home).join("alacritty/alacritty.yml");
+        if path.exists() {
+            return Some(path);
+        }
+
+        let path = PathBuf::from(&config_home).join(".alacritty.yml");
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    if let Ok(userprofile) = env::var("USERPROFILE") {
+        // Fallback path: %USERPROFILE%/.config/alacritty/alacritty.yml.
+        let fallback = PathBuf::from(&userprofile).join(".config/alacritty/alacritty.yml");
+        if fallback.exists() {
+            return Some(fallback);
+        }
+        // Fallback path: %USERPROFILE%/.alacritty.yml.
+        let fallback = PathBuf::from(&userprofile).join(".alacritty.yml");
+        if fallback.exists() {
+            return Some(fallback);
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]

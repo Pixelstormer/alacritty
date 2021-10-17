@@ -67,9 +67,12 @@ following locations:
 
 ### Windows
 
-On Windows, the config file should be located at:
+On Windows, the config file locations are the same, but `%USERPROFILE%` is used in lieu of `$HOME`:
 
-`%APPDATA%\alacritty\alacritty.yml`
+1. `%XDG_CONFIG_HOME%/alacritty/alacritty.yml`
+2. `%XDG_CONFIG_HOME%/alacritty.yml`
+3. `%USERPROFILE%/.config/alacritty/alacritty.yml`
+4. `%USERPROFILE%/.alacritty.yml`
 
 ## Contributing
 

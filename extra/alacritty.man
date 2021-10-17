@@ -49,7 +49,11 @@ Alacritty looks for the configuration file at the following paths:
     3. $HOME/.config/alacritty/alacritty.yml
     4. $HOME/.alacritty.yml
 
-On Windows, the configuration file is located at %APPDATA%\\alacritty\\alacritty.yml.
+On Windows, the config file locations are the same, but %USERPROFILE% is used in lieu of $HOME:
+    1. %XDG_CONFIG_HOME%/alacritty/alacritty.yml
+    2. %XDG_CONFIG_HOME%/alacritty.yml
+    3. %USERPROFILE%/.config/alacritty/alacritty.yml
+    4. %USERPROFILE%/.alacritty.yml
 .TP
 \fB\-\-embed\fR <parent>
 Defines the X11 window ID (as a decimal integer) to embed Alacritty within

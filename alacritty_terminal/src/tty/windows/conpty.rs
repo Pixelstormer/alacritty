@@ -5,9 +5,10 @@ use std::{i16, mem, ptr};
 use mio_anonymous_pipes::{EventedAnonRead, EventedAnonWrite};
 use winapi::shared::basetsd::{PSIZE_T, SIZE_T};
 use winapi::shared::minwindef::BYTE;
-use winapi::shared::ntdef::LPWSTR;
+use winapi::shared::ntdef::{LPCWSTR, LPWSTR};
 use winapi::shared::winerror::S_OK;
 use winapi::um::consoleapi::{ClosePseudoConsole, CreatePseudoConsole, ResizePseudoConsole};
+use winapi::um::processenv::ExpandEnvironmentStringsW;
 use winapi::um::processthreadsapi::{
     CreateProcessW, InitializeProcThreadAttributeList, UpdateProcThreadAttribute,
     PROCESS_INFORMATION, STARTUPINFOW,
@@ -139,11 +140,23 @@ pub fn new<C>(config: &Config<C>, size: &SizeInfo) -> Option<Pty> {
     let cmdline = win32_string(&cmdline(&config));
     let cwd = config.working_directory.as_ref().map(win32_string);
 
+    let expanded_buffer = Vec::<u16>::with_capacity(32767);
+
     let mut proc_info: PROCESS_INFORMATION = Default::default();
     unsafe {
+        success = ExpandEnvironmentStringsW(
+            cmdline.as_ptr() as LPCWSTR,
+            expanded_buffer.as_ptr() as LPWSTR,
+            32767,
+        ) > 0;
+
+        if !success {
+            panic_shell_spawn();
+        }
+
         success = CreateProcessW(
             ptr::null(),
-            cmdline.as_ptr() as LPWSTR,
+            expanded_buffer.as_ptr() as LPWSTR,
             ptr::null_mut(),
             ptr::null_mut(),
             false as i32,

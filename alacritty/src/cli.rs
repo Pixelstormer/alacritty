@@ -43,7 +43,7 @@ pub struct Options {
     #[structopt(long)]
     pub config_file: Option<PathBuf>,
 
-    /// Specify alternative configuration file [default: %APPDATA%\alacritty\alacritty.yml].
+    /// Specify alternative configuration file [default: %XDG_CONFIG_HOME%/alacritty/alacritty.yml].
     #[cfg(windows)]
     #[structopt(long)]
     pub config_file: Option<PathBuf>,
@@ -87,7 +87,7 @@ impl Options {
             match option_as_value(option) {
                 Ok(value) => {
                     options.config_options = serde_utils::merge(options.config_options, value);
-                },
+                }
                 Err(_) => eprintln!("Invalid CLI config option: {:?}", option),
             }
         }
@@ -168,11 +168,11 @@ fn option_as_value(option: &str) -> Result<Value, serde_yaml::Error> {
                 yaml_text.push_str(": ");
                 yaml_text.push_str(&option[i + 1..]);
                 break;
-            },
+            }
             '.' => {
                 yaml_text.push_str(": {");
                 closing_brackets.push('}');
-            },
+            }
             _ => yaml_text.push(c),
         }
     }
@@ -194,7 +194,7 @@ fn parse_class(input: &str) -> Result<Class, String> {
             }
 
             Ok(Class { instance: input[..position].into(), general })
-        },
+        }
         None => Ok(Class { instance: input.into(), general: DEFAULT_NAME.into() }),
     }
 }
