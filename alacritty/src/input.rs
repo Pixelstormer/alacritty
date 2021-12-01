@@ -29,14 +29,14 @@ use alacritty_terminal::term::{ClipboardType, SizeInfo, Term, TermMode};
 use alacritty_terminal::vi_mode::ViMotion;
 
 use crate::clipboard::Clipboard;
-use crate::config::{Action, BindingMode, Config, Key, MouseAction, SearchAction, ViAction};
+use crate::config::{Action, BindingMode, Key, MouseAction, SearchAction, UiConfig, ViAction};
 use crate::daemon::start_daemon;
 use crate::display::hint::HintMatch;
 use crate::display::window::Window;
 use crate::display::Display;
-use crate::event::{ClickState, Event, Mouse, TYPING_SEARCH_DELAY};
+use crate::event::{ClickState, Event, EventType, Mouse, TYPING_SEARCH_DELAY};
 use crate::message_bar::{self, Message};
-use crate::scheduler::{Scheduler, TimerId};
+use crate::scheduler::{Scheduler, TimerId, Topic};
 
 /// Font size change interval.
 pub const FONT_SIZE_STEP: f32 = 0.5;
@@ -80,11 +80,12 @@ pub trait ActionContext<T: EventListener> {
     fn terminal(&self) -> &Term<T>;
     fn terminal_mut(&mut self) -> &mut Term<T>;
     fn spawn_new_instance(&mut self) {}
+    fn create_new_window(&mut self) {}
     fn change_font_size(&mut self, _delta: f32) {}
     fn reset_font_size(&mut self) {}
     fn pop_message(&mut self) {}
     fn message(&self) -> Option<&Message>;
-    fn config(&self) -> &Config;
+    fn config(&self) -> &UiConfig;
     fn event_loop(&self) -> &EventLoopWindowTarget<Event>;
     fn mouse_mode(&self) -> bool;
     fn clipboard_mut(&mut self) -> &mut Clipboard;
@@ -319,6 +320,7 @@ impl<T: EventListener> Execute<T> for Action {
             Action::ClearHistory => ctx.terminal_mut().clear_screen(ClearMode::Saved),
             Action::ClearLogNotice => ctx.pop_message(),
             Action::SpawnNewInstance => ctx.spawn_new_instance(),
+            Action::CreateNewWindow => ctx.create_new_window(),
             Action::ReceiveChar | Action::None => (),
         }
     }
@@ -513,7 +515,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             self.ctx.mouse_mut().last_click_timestamp = now;
 
             // Update multi-click state.
-            let mouse_config = &self.ctx.config().ui_config.mouse;
+            let mouse_config = &self.ctx.config().mouse;
             self.ctx.mouse_mut().click_state = match self.ctx.mouse().click_state {
                 // Reset click state if button has changed.
                 _ if button != self.ctx.mouse().last_click_button => {
@@ -594,7 +596,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
         self.ctx.display().highlighted_hint = hint;
 
-        self.ctx.scheduler_mut().unschedule(TimerId::SelectionScrolling);
+        let timer_id = TimerId::new(Topic::SelectionScrolling, self.ctx.window().id());
+        self.ctx.scheduler_mut().unschedule(timer_id);
 
         // Copy selection on release, to prevent flooding the display server.
         self.ctx.copy_selection(ClipboardType::Selection);
@@ -640,7 +643,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             .contains(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL)
             && !self.ctx.modifiers().shift()
         {
-            let multiplier = f64::from(self.ctx.config().scrolling.multiplier);
+            let multiplier = f64::from(self.ctx.config().terminal_config.scrolling.multiplier);
             self.ctx.mouse_mut().scroll_px += new_scroll_px * multiplier;
 
             let cmd = if new_scroll_px > 0. { b'A' } else { b'B' };
@@ -654,7 +657,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             }
             self.ctx.write_to_pty(content);
         } else {
-            let multiplier = f64::from(self.ctx.config().scrolling.multiplier);
+            let multiplier = f64::from(self.ctx.config().terminal_config.scrolling.multiplier);
             self.ctx.mouse_mut().scroll_px += new_scroll_px * multiplier;
 
             let lines = self.ctx.mouse().scroll_px / height;
@@ -731,8 +734,10 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
         // Reset search delay when the user is still typing.
         if self.ctx.search_active() {
-            if let Some(timer) = self.ctx.scheduler_mut().get_mut(TimerId::DelayedSearch) {
-                timer.deadline = Instant::now() + TYPING_SEARCH_DELAY;
+            let timer_id = TimerId::new(Topic::DelayedSearch, self.ctx.window().id());
+            let scheduler = self.ctx.scheduler_mut();
+            if let Some(timer) = scheduler.unschedule(timer_id) {
+                scheduler.schedule(timer.event, TYPING_SEARCH_DELAY, false, timer.id);
             }
         }
 
@@ -796,7 +801,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             c.encode_utf8(&mut bytes[..]);
         }
 
-        if self.ctx.config().ui_config.alt_send_esc
+        if self.ctx.config().alt_send_esc
             && *self.ctx.received_count() == 0
             && self.ctx.modifiers().alt()
             && utf8_len == 1
@@ -818,8 +823,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         let mods = *self.ctx.modifiers();
         let mut suppress_chars = None;
 
-        for i in 0..self.ctx.config().ui_config.key_bindings().len() {
-            let binding = &self.ctx.config().ui_config.key_bindings()[i];
+        for i in 0..self.ctx.config().key_bindings().len() {
+            let binding = &self.ctx.config().key_bindings()[i];
 
             let key = match (binding.trigger, input.virtual_keycode) {
                 (Key::Scancode(_), _) => Key::Scancode(input.scancode),
@@ -849,8 +854,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         let mouse_mode = self.ctx.mouse_mode();
         let mods = *self.ctx.modifiers();
 
-        for i in 0..self.ctx.config().ui_config.mouse_bindings().len() {
-            let mut binding = self.ctx.config().ui_config.mouse_bindings()[i].clone();
+        for i in 0..self.ctx.config().mouse_bindings().len() {
+            let mut binding = self.ctx.config().mouse_bindings()[i].clone();
 
             // Require shift for all modifiers when mouse mode is active.
             if mouse_mode {
@@ -911,6 +916,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
     fn update_selection_scrolling(&mut self, mouse_y: i32) {
         let dpr = self.ctx.window().dpr;
         let size = self.ctx.size_info();
+        let window_id = self.ctx.window().id();
         let scheduler = self.ctx.scheduler_mut();
 
         // Scale constants by DPI.
@@ -928,26 +934,18 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         } else if mouse_y >= start_bottom {
             start_bottom - mouse_y - step
         } else {
-            scheduler.unschedule(TimerId::SelectionScrolling);
+            scheduler.unschedule(TimerId::new(Topic::SelectionScrolling, window_id));
             return;
         };
 
         // Scale number of lines scrolled based on distance to boundary.
         let delta = delta as i32 / step as i32;
-        let event = Event::Scroll(Scroll::Delta(delta));
+        let event = Event::new(EventType::Scroll(Scroll::Delta(delta)), Some(window_id));
 
         // Schedule event.
-        match scheduler.get_mut(TimerId::SelectionScrolling) {
-            Some(timer) => timer.event = event.into(),
-            None => {
-                scheduler.schedule(
-                    event.into(),
-                    SELECTION_SCROLLING_INTERVAL,
-                    true,
-                    TimerId::SelectionScrolling,
-                );
-            },
-        }
+        let timer_id = TimerId::new(Topic::SelectionScrolling, window_id);
+        scheduler.unschedule(timer_id);
+        scheduler.schedule(event, SELECTION_SCROLLING_INTERVAL, true, timer_id);
     }
 }
 
@@ -976,7 +974,7 @@ mod tests {
         pub received_count: usize,
         pub suppress_chars: bool,
         pub modifiers: ModifiersState,
-        config: &'a Config,
+        config: &'a UiConfig,
     }
 
     impl<'a, T: EventListener> super::ActionContext<T> for ActionContext<'a, T> {
@@ -1059,7 +1057,7 @@ mod tests {
             self.message_buffer.message()
         }
 
-        fn config(&self) -> &Config {
+        fn config(&self) -> &UiConfig {
             self.config
         }
 
@@ -1087,7 +1085,7 @@ mod tests {
             #[test]
             fn $name() {
                 let mut clipboard = Clipboard::new_nop();
-                let cfg = Config::default();
+                let cfg = UiConfig::default();
                 let size = SizeInfo::new(
                     21.0,
                     51.0,
@@ -1098,7 +1096,7 @@ mod tests {
                     false,
                 );
 
-                let mut terminal = Term::new(&cfg, size, MockEventProxy);
+                let mut terminal = Term::new(&cfg.terminal_config, size, MockEventProxy);
 
                 let mut mouse = Mouse {
                     click_state: $initial_state,
@@ -1106,7 +1104,7 @@ mod tests {
                     ..Mouse::default()
                 };
 
-                let mut message_buffer = MessageBuffer::new();
+                let mut message_buffer = MessageBuffer::default();
 
                 let context = ActionContext {
                     terminal: &mut terminal,

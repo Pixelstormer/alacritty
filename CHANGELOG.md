@@ -7,9 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 0.10.0-dev
 
+### Packaging
+
+- New `extra/alacritty-msg.man` manpage for the `alacritty msg` subcommand
+
 ### Added
 
 - Option `colors.transparent_background_colors` to allow applying opacity to all background colors
+- Support for running multiple windows from a single Alacritty instance (see docs/features.md)
 
 ### Changed
 
@@ -21,6 +26,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Line indicator obstructing vi mode cursor when scrolled into history
 - Vi mode search starting in the line below the vi cursor
+- Invisible cursor with matching foreground/background colors
+- Crash when hovering over a match emptied by post-processing
 
 ## 0.9.0
 

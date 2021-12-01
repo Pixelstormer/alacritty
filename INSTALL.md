@@ -125,7 +125,7 @@ a `zypper` command that should install all of them. If something is
 still found to be missing, please open an issue.
 
 ```sh
-zypper install cmake freetype-devel fontconfig-devel libxcb-devel libxkbcommon-dev
+zypper install cmake freetype-devel fontconfig-devel libxcb-devel libxkbcommon-devel
 ```
 
 #### Slackware
@@ -310,6 +310,7 @@ Installing the manual page requires the additional dependency `gzip`.
 ```sh
 sudo mkdir -p /usr/local/share/man/man1
 gzip -c extra/alacritty.man | sudo tee /usr/local/share/man/man1/alacritty.1.gz > /dev/null
+gzip -c extra/alacritty-msg.man | sudo tee /usr/local/share/man/man1/alacritty-msg.1.gz > /dev/null
 ```
 
 ### Shell completions

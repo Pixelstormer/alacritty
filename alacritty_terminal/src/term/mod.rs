@@ -288,7 +288,7 @@ impl<T> Term<T> {
         self.vi_mode_recompute_selection();
     }
 
-    pub fn new<C>(config: &Config<C>, size: SizeInfo, event_proxy: T) -> Term<T> {
+    pub fn new(config: &Config, size: SizeInfo, event_proxy: T) -> Term<T> {
         let num_cols = size.columns;
         let num_lines = size.screen_lines;
 
@@ -323,7 +323,7 @@ impl<T> Term<T> {
         }
     }
 
-    pub fn update_config<C>(&mut self, config: &Config<C>)
+    pub fn update_config(&mut self, config: &Config)
     where
         T: EventListener,
     {
@@ -640,7 +640,7 @@ impl<T> Term<T> {
         }
 
         // Update UI about cursor blinking state changes.
-        self.event_proxy.send_event(Event::CursorBlinkingChange(self.cursor_style().blinking));
+        self.event_proxy.send_event(Event::CursorBlinkingChange);
     }
 
     /// Move vi mode cursor.
@@ -1471,8 +1471,7 @@ impl<T: EventListener> Handler for Term<T> {
         self.mode &= TermMode::VI;
         self.mode.insert(TermMode::default());
 
-        let blinking = self.cursor_style().blinking;
-        self.event_proxy.send_event(Event::CursorBlinkingChange(blinking));
+        self.event_proxy.send_event(Event::CursorBlinkingChange);
     }
 
     #[inline]
@@ -1576,7 +1575,7 @@ impl<T: EventListener> Handler for Term<T> {
             ansi::Mode::BlinkingCursor => {
                 let style = self.cursor_style.get_or_insert(self.default_cursor_style);
                 style.blinking = true;
-                self.event_proxy.send_event(Event::CursorBlinkingChange(true));
+                self.event_proxy.send_event(Event::CursorBlinkingChange);
             },
         }
     }
@@ -1618,7 +1617,7 @@ impl<T: EventListener> Handler for Term<T> {
             ansi::Mode::BlinkingCursor => {
                 let style = self.cursor_style.get_or_insert(self.default_cursor_style);
                 style.blinking = false;
-                self.event_proxy.send_event(Event::CursorBlinkingChange(false));
+                self.event_proxy.send_event(Event::CursorBlinkingChange);
             },
         }
     }
@@ -1678,8 +1677,7 @@ impl<T: EventListener> Handler for Term<T> {
         self.cursor_style = style;
 
         // Notify UI about blinking changes.
-        let blinking = style.unwrap_or(self.default_cursor_style).blinking;
-        self.event_proxy.send_event(Event::CursorBlinkingChange(blinking));
+        self.event_proxy.send_event(Event::CursorBlinkingChange);
     }
 
     #[inline]
@@ -1905,7 +1903,7 @@ pub mod test {
 
         // Create terminal with the appropriate dimensions.
         let size = SizeInfo::new(num_cols as f32, lines.len() as f32, 1., 1., 0., 0., false);
-        let mut term = Term::new(&Config::<()>::default(), size, ());
+        let mut term = Term::new(&Config::default(), size, ());
 
         // Fill terminal with content.
         for (line, text) in lines.iter().enumerate() {
@@ -1940,7 +1938,7 @@ mod tests {
     use std::mem;
 
     use crate::ansi::{self, CharsetIndex, Handler, StandardCharset};
-    use crate::config::MockConfig;
+    use crate::config::Config;
     use crate::grid::{Grid, Scroll};
     use crate::index::{Column, Point, Side};
     use crate::selection::{Selection, SelectionType};
@@ -1949,7 +1947,7 @@ mod tests {
     #[test]
     fn scroll_display_page_up() {
         let size = SizeInfo::new(5., 10., 1.0, 1.0, 0.0, 0.0, false);
-        let mut term = Term::new(&MockConfig::default(), size, ());
+        let mut term = Term::new(&Config::default(), size, ());
 
         // Create 11 lines of scrollback.
         for _ in 0..20 {
@@ -1975,7 +1973,7 @@ mod tests {
     #[test]
     fn scroll_display_page_down() {
         let size = SizeInfo::new(5., 10., 1.0, 1.0, 0.0, 0.0, false);
-        let mut term = Term::new(&MockConfig::default(), size, ());
+        let mut term = Term::new(&Config::default(), size, ());
 
         // Create 11 lines of scrollback.
         for _ in 0..20 {
@@ -2005,7 +2003,7 @@ mod tests {
     #[test]
     fn semantic_selection_works() {
         let size = SizeInfo::new(5., 3., 1.0, 1.0, 0.0, 0.0, false);
-        let mut term = Term::new(&MockConfig::default(), size, ());
+        let mut term = Term::new(&Config::default(), size, ());
         let mut grid: Grid<Cell> = Grid::new(3, 5, 0);
         for i in 0..5 {
             for j in 0..2 {
@@ -2053,7 +2051,7 @@ mod tests {
     #[test]
     fn line_selection_works() {
         let size = SizeInfo::new(5., 1., 1.0, 1.0, 0.0, 0.0, false);
-        let mut term = Term::new(&MockConfig::default(), size, ());
+        let mut term = Term::new(&Config::default(), size, ());
         let mut grid: Grid<Cell> = Grid::new(1, 5, 0);
         for i in 0..5 {
             grid[Line(0)][Column(i)].c = 'a';
@@ -2074,7 +2072,7 @@ mod tests {
     #[test]
     fn selecting_empty_line() {
         let size = SizeInfo::new(3.0, 3.0, 1.0, 1.0, 0.0, 0.0, false);
-        let mut term = Term::new(&MockConfig::default(), size, ());
+        let mut term = Term::new(&Config::default(), size, ());
         let mut grid: Grid<Cell> = Grid::new(3, 3, 0);
         for l in 0..3 {
             if l != 1 {
@@ -2112,7 +2110,7 @@ mod tests {
     #[test]
     fn input_line_drawing_character() {
         let size = SizeInfo::new(21.0, 51.0, 3.0, 3.0, 0.0, 0.0, false);
-        let mut term = Term::new(&MockConfig::default(), size, ());
+        let mut term = Term::new(&Config::default(), size, ());
         let cursor = Point::new(Line(0), Column(0));
         term.configure_charset(CharsetIndex::G0, StandardCharset::SpecialCharacterAndLineDrawing);
         term.input('a');
@@ -2123,7 +2121,7 @@ mod tests {
     #[test]
     fn clear_saved_lines() {
         let size = SizeInfo::new(21.0, 51.0, 3.0, 3.0, 0.0, 0.0, false);
-        let mut term = Term::new(&MockConfig::default(), size, ());
+        let mut term = Term::new(&Config::default(), size, ());
 
         // Add one line of scrollback.
         term.grid.scroll_up(&(Line(0)..Line(1)), 1);
@@ -2145,7 +2143,7 @@ mod tests {
     #[test]
     fn grow_lines_updates_active_cursor_pos() {
         let mut size = SizeInfo::new(100.0, 10.0, 1.0, 1.0, 0.0, 0.0, false);
-        let mut term = Term::new(&MockConfig::default(), size, ());
+        let mut term = Term::new(&Config::default(), size, ());
 
         // Create 10 lines of scrollback.
         for _ in 0..19 {
@@ -2165,7 +2163,7 @@ mod tests {
     #[test]
     fn grow_lines_updates_inactive_cursor_pos() {
         let mut size = SizeInfo::new(100.0, 10.0, 1.0, 1.0, 0.0, 0.0, false);
-        let mut term = Term::new(&MockConfig::default(), size, ());
+        let mut term = Term::new(&Config::default(), size, ());
 
         // Create 10 lines of scrollback.
         for _ in 0..19 {
@@ -2191,7 +2189,7 @@ mod tests {
     #[test]
     fn shrink_lines_updates_active_cursor_pos() {
         let mut size = SizeInfo::new(100.0, 10.0, 1.0, 1.0, 0.0, 0.0, false);
-        let mut term = Term::new(&MockConfig::default(), size, ());
+        let mut term = Term::new(&Config::default(), size, ());
 
         // Create 10 lines of scrollback.
         for _ in 0..19 {
@@ -2211,7 +2209,7 @@ mod tests {
     #[test]
     fn shrink_lines_updates_inactive_cursor_pos() {
         let mut size = SizeInfo::new(100.0, 10.0, 1.0, 1.0, 0.0, 0.0, false);
-        let mut term = Term::new(&MockConfig::default(), size, ());
+        let mut term = Term::new(&Config::default(), size, ());
 
         // Create 10 lines of scrollback.
         for _ in 0..19 {
@@ -2237,7 +2235,7 @@ mod tests {
     #[test]
     fn window_title() {
         let size = SizeInfo::new(21.0, 51.0, 3.0, 3.0, 0.0, 0.0, false);
-        let mut term = Term::new(&MockConfig::default(), size, ());
+        let mut term = Term::new(&Config::default(), size, ());
 
         // Title None by default.
         assert_eq!(term.title, None);
