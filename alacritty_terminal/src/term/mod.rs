@@ -587,6 +587,8 @@ impl<T> Term<T> {
         // Scroll selection.
         self.selection = self.selection.take().and_then(|s| s.rotate(self, &region, lines as i32));
 
+        self.grid.scroll_up(&region, lines);
+
         // Scroll vi mode cursor.
         let viewport_top = Line(-(self.grid.display_offset() as i32));
         let top = if region.start == 0 { viewport_top } else { region.start };
@@ -594,9 +596,6 @@ impl<T> Term<T> {
         if (top <= *line) && region.end > *line {
             *line = max(*line - lines, top);
         }
-
-        // Scroll from origin to bottom less number of lines.
-        self.grid.scroll_up(&region, lines);
     }
 
     fn deccolm(&mut self)
@@ -1424,12 +1423,18 @@ impl<T: EventListener> Handler for Term<T> {
                     self.grid.reset_region(..);
                 } else {
                     self.grid.clear_viewport();
+
+                    self.vi_mode_cursor.point.line =
+                        self.vi_mode_cursor.point.line.grid_clamp(self, Boundary::Cursor);
                 }
 
                 self.selection = None;
             },
             ansi::ClearMode::Saved if self.history_size() > 0 => {
                 self.grid.clear_history();
+
+                self.vi_mode_cursor.point.line =
+                    self.vi_mode_cursor.point.line.grid_clamp(self, Boundary::Cursor);
 
                 self.selection = self.selection.take().filter(|s| !s.intersects_range(..Line(0)));
             },
@@ -2119,6 +2124,50 @@ mod tests {
     }
 
     #[test]
+    fn clear_viewport_set_vi_cursor_into_viewport() {
+        let size = SizeInfo::new(10.0, 20.0, 1.0, 1.0, 0.0, 0.0, false);
+        let mut term = Term::new(&Config::default(), size, ());
+
+        // Create 10 lines of scrollback.
+        for _ in 0..29 {
+            term.newline();
+        }
+
+        // Change the display area and the vi cursor position.
+        term.scroll_display(Scroll::Top);
+        term.vi_mode_cursor.point = Point::new(Line(-5), Column(3));
+
+        // Clear the viewport.
+        term.clear_screen(ansi::ClearMode::All);
+
+        assert_eq!(term.grid.display_offset(), 0);
+        assert_eq!(term.vi_mode_cursor.point.line.0, 0);
+        assert_eq!(term.vi_mode_cursor.point.column.0, 3);
+    }
+
+    #[test]
+    fn clear_scrollback_set_vi_cursor_into_viewport() {
+        let size = SizeInfo::new(10.0, 20.0, 1.0, 1.0, 0.0, 0.0, false);
+        let mut term = Term::new(&Config::default(), size, ());
+
+        // Create 10 lines of scrollback.
+        for _ in 0..29 {
+            term.newline();
+        }
+
+        // Change the display area and the vi cursor position.
+        term.scroll_display(Scroll::Top);
+        term.vi_mode_cursor.point = Point::new(Line(-5), Column(3));
+
+        // Clear the scrollback buffer.
+        term.clear_screen(ansi::ClearMode::Saved);
+
+        assert_eq!(term.grid.display_offset(), 0);
+        assert_eq!(term.vi_mode_cursor.point.line.0, 0);
+        assert_eq!(term.vi_mode_cursor.point.column.0, 3);
+    }
+
+    #[test]
     fn clear_saved_lines() {
         let size = SizeInfo::new(21.0, 51.0, 3.0, 3.0, 0.0, 0.0, false);
         let mut term = Term::new(&Config::default(), size, ());
@@ -2138,6 +2187,26 @@ mod tests {
         term.grid.truncate();
 
         assert_eq!(term.grid, scrolled_grid);
+    }
+
+    #[test]
+    fn vi_cursor_keep_pos_on_scrollback_buffer() {
+        let size = SizeInfo::new(5., 10., 1.0, 1.0, 0.0, 0.0, false);
+        let mut term = Term::new(&Config::default(), size, ());
+
+        // Create 11 lines of scrollback.
+        for _ in 0..20 {
+            term.newline();
+        }
+
+        // Enable vi mode.
+        term.toggle_vi_mode();
+
+        term.scroll_display(Scroll::Top);
+        term.vi_mode_cursor.point.line = Line(-11);
+
+        term.linefeed();
+        assert_eq!(term.vi_mode_cursor.point.line, Line(-12));
     }
 
     #[test]
